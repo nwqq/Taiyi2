@@ -16,15 +16,14 @@ jobs:
           sudo timedatectl set-timezone "Asia/Shanghai"
           df -h
 
-      - name: 2. 克隆ImmortalWrt官方源码
+      - name: 2. 克隆ImmortalWrt官方源码并适配
         run: |
           git clone -b openwrt-24.10 --depth 1 https://github.com/immortalwrt/immortalwrt.git
           cd immortalwrt
-
-          # ========== 手动添加太乙PLUS适配（无第三方依赖） ==========
-          # 2.1 创建设备树文件
+          
+          # 2.1 创建设备树文件（修复EOF语法，统一缩进）
           mkdir -p target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom
-          cat > target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts << 'EOF'
+          cat > target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts << EOF
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
 #include "ipq5332.dtsi"
@@ -72,13 +71,13 @@ jobs:
 	};
 };
 EOF
-
+          
           # 2.2 修改Makefile添加设备编译条目
-          cat >> target/linux/ipq53xx/image/Makefile << 'EOF'
+          cat >> target/linux/ipq53xx/image/Makefile << EOF
 # JDCloud Taiyi Plus (IPQ5322)
 define Device/jdcloud-taiyi-plus
-  $(call Device/FitImage)
-  $(call Device/UbiFit)
+  \$(call Device/FitImage)
+  \$(call Device/UbiFit)
   DEVICE_VENDOR := JDCloud
   DEVICE_MODEL := Taiyi Plus (ER2)
   DEVICE_DTS := qcom/ipq5322-jdcloud-taiyi-plus
@@ -90,7 +89,7 @@ define Device/jdcloud-taiyi-plus
 endef
 TARGET_DEVICES += jdcloud-taiyi-plus
 EOF
-
+          
           # 2.3 启用NSS/PPE加速
           echo -e "\n# NSS/PPE加速" >> target/linux/ipq53xx/config-6.6
           echo "CONFIG_QCA_NSS_DRV=y" >> target/linux/ipq53xx/config-6.6
@@ -98,16 +97,14 @@ EOF
           echo "CONFIG_QCA_NSS_DP=y" >> target/linux/ipq53xx/config-6.6
           echo "CONFIG_TCP_CONG_BBR=y" >> target/linux/ipq53xx/config-6.6
 
-          # ========== 集成iStore应用商店 ==========
-          # 添加iStore源
+          # 2.4 集成iStore应用商店
           echo "src-git istore https://github.com/linkease/istore-ui.git;main" >> feeds.conf.default
           echo "src-git store https://github.com/linkease/istore.git;main" >> feeds.conf.default
-          # 更新feeds并安装iStore
           ./scripts/feeds update -a
           ./scripts/feeds install -y luci-app-store luci-theme-argon
 
-          # ========== 生成编译配置（含iStore+核心功能） ==========
-          cat > .config << 'EOF'
+          # 2.5 生成编译配置（含iStore+核心功能）
+          cat > .config << EOF
 CONFIG_TARGET_qualcommax=y
 CONFIG_TARGET_qualcommax_ipq53xx=y
 CONFIG_TARGET_qualcommax_ipq53xx_DEVICE_jdcloud-taiyi-plus=y
@@ -134,7 +131,7 @@ CONFIG_PACKAGE_luci-app-nss-dnsmasq=y
 CONFIG_PACKAGE_kmod-tcp-bbr=y
 CONFIG_PACKAGE_luci-app-sqm=y
 EOF
-
+          
           # 补全配置依赖
           make defconfig
 
@@ -142,7 +139,6 @@ EOF
         run: |
           cd immortalwrt
           make download -j$(nproc)
-          # 清理无效包
           find dl -size -1024c -exec rm -f {} \;
 
       - name: 4. 编译固件
