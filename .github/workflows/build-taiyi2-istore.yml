@@ -1,13 +1,13 @@
-name: Build ImmortalWrt for JDCloud Taiyi Plus
+name: Build TaiyiPlus ImmortalWrt
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: '固件版本号'
+        description: '固件版本'
         required: false
         default: '24.10'
       branch:
-        description: 'ImmortalWrt分支'
+        description: '源码分支'
         required: false
         default: 'openwrt-24.10'
 
@@ -16,71 +16,45 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
-    
-    steps:
-      - name: 1. 初始化编译环境
-        run: |
-          sudo rm -rf /etc/apt/sources.list.d/*
-          sudo apt update -y
-          sudo apt install -y build-essential clang flex bison g++ gawk \
-          gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
-          python3-distutils rsync unzip zlib1g-dev file wget curl subversion \
-          swig libelf-dev libncurses-dev device-tree-compiler ccache \
-          ecj fastjar java-propose-classpath python2 python3 python3-pip \
-          python3-setuptools python3-wheel cmake ninja-build libtool autoconf automake
-          
-          # 配置ccache
-          sudo mkdir -p /mnt/ccache
-          sudo chown -R $USER:$USER /mnt/ccache
-          echo "CCACHE_DIR=/mnt/ccache" >> $GITHUB_ENV
-          echo "CCACHE_MAXSIZE=15G" >> $GITHUB_ENV
-          echo "PATH=/usr/lib/ccache:$PATH" >> $GITHUB_ENV
-          
-          # 设置时区和磁盘检查
-          sudo timedatectl set-timezone "Asia/Shanghai"
-          df -h
 
-      - name: 2. 克隆源码
+    steps:
+      # 步骤1：安装基础依赖（极简版）
+      - name: Install Dependencies
         run: |
-          if [ -z "${{ github.event.inputs.branch }}" ]; then
-            BRANCH="openwrt-24.10"
-          else
-            BRANCH="${{ github.event.inputs.branch }}"
-          fi
-          
+          sudo apt update -y
+          sudo apt install -y build-essential git libncurses5-dev libssl-dev python3-distutils rsync unzip wget curl
+          sudo timedatectl set-timezone "Asia/Shanghai"
+
+      # 步骤2：克隆源码+配置feeds
+      - name: Clone Source Code
+        run: |
+          BRANCH=${{ github.event.inputs.branch || 'openwrt-24.10' }}
           git clone --depth 1 -b $BRANCH https://github.com/immortalwrt/immortalwrt.git immortalwrt
           cd immortalwrt
-          
-          # 添加feeds
+          # 基础feeds配置
           echo "src-git packages https://github.com/immortalwrt/packages.git;$BRANCH" > feeds.conf.default
           echo "src-git luci https://github.com/immortalwrt/luci.git;$BRANCH" >> feeds.conf.default
-          echo "src-git routing https://github.com/immortalwrt/routing.git;$BRANCH" >> feeds.conf.default
-          echo "src-git telephony https://github.com/immortalwrt/telephony.git;$BRANCH" >> feeds.conf.default
           echo "src-git istore https://github.com/linkease/istore-core.git;main" >> feeds.conf.default
-          
           # 创建设备树目录
           mkdir -p target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom
 
-      - name: 3. 写入设备树文件
+      # 步骤3：写入设备树（核心修复：用YAML | 标识多行文本）
+      - name: Write DTS File
         run: |
           cat > immortalwrt/target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts << EOF
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
 #include "ipq5322.dtsi"
-
 / {
     model = "JDCloud Taiyi Plus (ER2)";
     compatible = "jdcloud,taiyi-plus", "qcom,ipq5322";
-    
     memory@0 {
         device_type = "memory";
         reg = <0x0 0x0 0x0 0x80000000>;
     };
-    
     chosen {
         bootargs = "console=ttyMSM0,115200n8 rootfstype=squashfs,jffs2";
     };
-    
     aliases {
         serial0 = &blsp1_uart1;
         ethernet0 = &gmac0;
@@ -89,64 +63,34 @@ jobs:
         ethernet3 = &gmac3;
     };
 };
-
-&blsp1_uart1 { 
-    status = "okay"; 
-};
-
+&blsp1_uart1 { status = "okay"; };
 &gmac0 {
     status = "okay";
     phy-mode = "2500base-x";
-    fixed-link {
-        speed = <2500>;
-        full-duplex;
-    };
+    fixed-link { speed = <2500>; full-duplex; };
 };
-
 &gmac1 {
     status = "okay";
     phy-mode = "2500base-x";
-    fixed-link {
-        speed = <2500>;
-        full-duplex;
-    };
+    fixed-link { speed = <2500>; full-duplex; };
 };
-
 &gmac2 {
     status = "okay";
     phy-mode = "2500base-x";
-    fixed-link {
-        speed = <2500>;
-        full-duplex;
-    };
+    fixed-link { speed = <2500>; full-duplex; };
 };
-
 &gmac3 {
     status = "okay";
     phy-mode = "2500base-x";
-    fixed-link {
-        speed = <2500>;
-        full-duplex;
-    };
+    fixed-link { speed = <2500>; full-duplex; };
 };
-
 &mdio {
     status = "okay";
-    
-    phy0: ethernet-phy@0 { 
-        reg = <0>; 
-    };
-    phy1: ethernet-phy@1 { 
-        reg = <1>; 
-    };
-    phy2: ethernet-phy@2 { 
-        reg = <2>; 
-    };
-    phy3: ethernet-phy@3 { 
-        reg = <3>; 
-    };
+    phy0: ethernet-phy@0 { reg = <0>; };
+    phy1: ethernet-phy@1 { reg = <1>; };
+    phy2: ethernet-phy@2 { reg = <2>; };
+    phy3: ethernet-phy@3 { reg = <3>; };
 };
-
 &nand {
     status = "okay";
     nand@0 {
@@ -154,180 +98,88 @@ jobs:
             compatible = "fixed-partitions";
             #address-cells = <1>;
             #size-cells = <1>;
-            
-            partition@0 {
-                label = "0:BL";
-                reg = <0x00000000 0x00500000>;
-                read-only;
-            };
-            partition@500000 {
-                label = "0:Kernel";
-                reg = <0x00500000 0x02000000>;
-            };
-            partition@2500000 {
-                label = "0:RootFS";
-                reg = <0x02500000 0x07fb0000>;
-            };
+            partition@0 { label = "0:BL"; reg = <0x00000000 0x00500000>; read-only; };
+            partition@500000 { label = "0:Kernel"; reg = <0x00500000 0x02000000>; };
+            partition@2500000 { label = "0:RootFS"; reg = <0x02500000 0x07fb0000>; };
         };
     };
 };
 EOF
-        shell: bash  # 强制指定bash解析器，避免sh导致的heredoc错误
+        shell: bash
 
-      - name: 4. 添加设备编译条目
+      # 步骤4：添加设备编译配置
+      - name: Add Device to Makefile
         run: |
           cat >> immortalwrt/target/linux/ipq53xx/image/Makefile << EOF
-
-# JDCloud Taiyi Plus (IPQ5322)
 define Device/jdcloud-taiyi-plus
-  $(call Device/FitImageLzma)
-  $(call Device/UbiFit)
+  \$(call Device/FitImageLzma)
+  \$(call Device/UbiFit)
   DEVICE_VENDOR := JDCloud
   DEVICE_MODEL := Taiyi Plus (ER2)
   DEVICE_DTS := ipq5322-jdcloud-taiyi-plus
-  DEVICE_DTS_DIR := $(DTS_DIR)/qcom
-  DEVICE_DTS_CONFIG := config@1
+  DEVICE_DTS_DIR := \$(DTS_DIR)/qcom
   BLOCKSIZE := 128k
   PAGESIZE := 2048
   IMAGE_SIZE := 32768k
-  KERNEL_IN_UBI := 1
-  UBOOTENV_IN_UBI := 1
-  UBINIZE_OPTS := -E 5
   DEVICE_PACKAGES := kmod-usb3 kmod-sfp
 endef
 TARGET_DEVICES += jdcloud-taiyi-plus
 EOF
         shell: bash
 
-      - name: 5. 启用硬件加速
-        run: |
-          echo -e "\n# IPQ5322硬件优化" >> immortalwrt/target/linux/ipq53xx/config-6.6
-          echo "CONFIG_CPU_FREQ=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
-          echo "CONFIG_ARM_QCOM_CPUFREQ_NVMEM=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
-          echo "CONFIG_XFRM_OFFLOAD=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
-          echo "CONFIG_NET_SWITCHDEV=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
-        shell: bash
-
-      - name: 6. 更新feeds并安装
+      # 步骤5：更新feeds+安装iStore
+      - name: Update Feeds
         run: |
           cd immortalwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          ./scripts/feeds install -y -p istore luci luci-compat luci-theme-argon
-        shell: bash
+          ./scripts/feeds install -y luci-app-store luci-theme-argon luci-i18n-store-zh-cn
 
-      - name: 7. 生成编译配置
+      # 步骤6：生成编译配置
+      - name: Generate Config
         run: |
           cd immortalwrt
           cat > .config << EOF
 CONFIG_TARGET_qualcommax=y
 CONFIG_TARGET_qualcommax_ipq53xx=y
 CONFIG_TARGET_qualcommax_ipq53xx_DEVICE_jdcloud-taiyi-plus=y
-
-# 基础系统
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-theme-argon=y
-CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
-CONFIG_PACKAGE_luci-app-opkg=y
-CONFIG_PACKAGE_luci-app-firewall=y
-CONFIG_DEFAULT_luci_theme="argon"
-CONFIG_PACKAGE_openssh-sftp-server=y
-CONFIG_PACKAGE_curl=y
-CONFIG_PACKAGE_htop=y
-CONFIG_PACKAGE_iperf3=y
-CONFIG_PACKAGE_wget-ssl=y
-
-# iStore应用商店
 CONFIG_PACKAGE_luci-app-store=y
 CONFIG_PACKAGE_luci-i18n-store-zh-cn=y
-CONFIG_PACKAGE_app-meta-ddns=y
-CONFIG_PACKAGE_app-meta-passwall=y
-
-# 网络优化
-CONFIG_PACKAGE_kmod-tcp-bbr=y
-CONFIG_PACKAGE_luci-app-sqm=y
-CONFIG_PACKAGE_kmod-ipt-offload=y
-CONFIG_PACKAGE_kmod-nf-flowtable=y
-
-# 硬件驱动
-CONFIG_PACKAGE_kmod-usb3=y
-CONFIG_PACKAGE_kmod-sfp=y
-CONFIG_PACKAGE_kmod-phy-qca8075=y
-
-# 文件系统
-CONFIG_PACKAGE_kmod-fs-ext4=y
-CONFIG_PACKAGE_kmod-fs-vfat=y
-CONFIG_PACKAGE_kmod-usb-storage=y
-
-# IPv6
+CONFIG_PACKAGE_openssh-sftp-server=y
+CONFIG_PACKAGE_curl=y
 CONFIG_IPV6=y
-CONFIG_PACKAGE_odhcp6c=y
-CONFIG_PACKAGE_odhcpd=y
-CONFIG_PACKAGE_luci-proto-ipv6=y
-
-# 存储优化
-CONFIG_MTD_SPI_NOR_USE_4K_SECTORS=y
-CONFIG_NAND_PAGE_SIZE=2048
-CONFIG_NAND_OOB_SIZE=128
-CONFIG_NAND_BLOCK_SIZE=128k
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
-CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256
 EOF
           make defconfig
-        shell: bash
 
-      - name: 8. 下载依赖包
+      # 步骤7：下载依赖+编译固件
+      - name: Build Firmware
         run: |
           cd immortalwrt
           make download -j$(nproc)
-          find dl -size -1024c -delete
-        shell: bash
-
-      - name: 9. 编译固件
-        run: |
-          cd immortalwrt
-          ccache -s
           make -j$(nproc) V=s || make -j1 V=s
-          ccache -s
-          echo "FIRMWARE_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
-          echo "FIRMWARE_TIME=$(date +'%H%M')" >> $GITHUB_ENV
-        shell: bash
+          echo "FIRMWARE_DATE=$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
-      - name: 10. 整理固件文件
+      # 步骤8：打包+上传固件
+      - name: Upload to Releases
         run: |
           cd immortalwrt
           mkdir -p firmware
-          find bin/targets/qualcommax/ipq53xx -type f \( -name "*.bin" -o -name "*.ubi" -o -name "*.img" \) -exec cp {} firmware/ \;
-          zip -r firmware.zip firmware/
+          cp bin/targets/qualcommax/ipq53xx/*.bin firmware/
+          zip -r taiyi-plus-immortalwrt-${{ env.FIRMWARE_DATE }}.zip firmware/
         shell: bash
 
-      - name: 11. 上传固件到Releases
+      - name: Release Firmware
         uses: softprops/action-gh-release@v2
         with:
-          name: TaiyiPlus-ImmortalWrt-${{ env.FIRMWARE_DATE }}-${{ env.FIRMWARE_TIME }}
-          tag_name: v${{ env.FIRMWARE_DATE }}-${{ env.FIRMWARE_TIME }}
-          files: immortalwrt/firmware.zip
+          tag_name: v${{ env.FIRMWARE_DATE }}
+          files: immortalwrt/taiyi-plus-immortalwrt-${{ env.FIRMWARE_DATE }}.zip
           body: |
-            ## 京东云太乙Plus专用固件
-            **版本**: ImmortalWrt ${{ github.event.inputs.version || '24.10' }}
-            **编译时间**: ${{ env.FIRMWARE_DATE }} ${{ env.FIRMWARE_TIME }}
-            
-            ### 硬件适配
-            - CPU: IPQ5322 四核 1.5GHz
-            - RAM: 2GB DDR4
-            - 网口: 4×2.5G RJ45
-            - USB: 1×USB 3.0
-            
-            ### 默认配置
-            IP地址: 192.168.1.1  
-            用户名: root  
-            密码: password
+            ## 京东云太乙Plus ImmortalWrt固件
+            版本：${{ github.event.inputs.version }}
+            编译时间：${{ env.FIRMWARE_DATE }}
+            默认IP：192.168.1.1 | 账号：root | 密码：password
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 12. 清理工作空间
-        if: always()
-        run: |
-          rm -rf immortalwrt
-          ccache -C
-        shell: bash
