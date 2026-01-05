@@ -63,7 +63,7 @@ jobs:
 
       - name: 3. 写入设备树文件
         run: |
-          cat > immortalwrt/target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts << 'EOF'
+          cat > immortalwrt/target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts << EOF
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
 #include "ipq5322.dtsi"
@@ -175,7 +175,7 @@ EOF
 
       - name: 4. 添加设备编译条目
         run: |
-          cat >> immortalwrt/target/linux/ipq53xx/image/Makefile << 'EOF'
+          cat >> immortalwrt/target/linux/ipq53xx/image/Makefile << EOF
 
 # JDCloud Taiyi Plus (IPQ5322)
 define Device/jdcloud-taiyi-plus
@@ -215,7 +215,7 @@ EOF
       - name: 7. 生成编译配置
         run: |
           cd immortalwrt
-          cat > .config << 'EOF'
+          cat > .config << EOF
 CONFIG_TARGET_qualcommax=y
 CONFIG_TARGET_qualcommax_ipq53xx=y
 CONFIG_TARGET_qualcommax_ipq53xx_DEVICE_jdcloud-taiyi-plus=y
