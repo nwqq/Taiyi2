@@ -11,9 +11,6 @@ on:
         required: false
         default: 'openwrt-24.10'
 
-env:
-  REPO_URL: https://github.com/immortalwrt/immortalwrt
-
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -45,8 +42,13 @@ jobs:
 
       - name: 2. 克隆源码
         run: |
-          BRANCH="${{ github.event.inputs.branch || 'openwrt-24.10' }}"
-          git clone --depth 1 -b $BRANCH $REPO_URL immortalwrt
+          if [ -z "${{ github.event.inputs.branch }}" ]; then
+            BRANCH="openwrt-24.10"
+          else
+            BRANCH="${{ github.event.inputs.branch }}"
+          fi
+          
+          git clone --depth 1 -b $BRANCH https://github.com/immortalwrt/immortalwrt.git immortalwrt
           cd immortalwrt
           
           # 添加feeds
@@ -312,6 +314,8 @@ EOF
             IP地址: 192.168.1.1  
             用户名: root  
             密码: password
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 12. 清理工作空间
         if: always()
