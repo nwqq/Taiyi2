@@ -18,14 +18,16 @@ jobs:
       contents: write
 
     steps:
-      - name: 1. Install Basic Dependencies
+      # 1. 安装依赖（极简）
+      - name: Install Dependencies
         run: |
           sudo apt update -y
           sudo apt install -y build-essential git libncurses5-dev libssl-dev python3-distutils rsync unzip wget curl device-tree-compiler
           sudo timedatectl set-timezone "Asia/Shanghai"
         shell: bash
 
-      - name: 2. Clone Source Code
+      # 2. 克隆源码+配置feeds
+      - name: Clone Source
         run: |
           BRANCH="${{ github.event.inputs.branch || 'openwrt-24.10' }}"
           git clone --depth 1 -b "${BRANCH}" https://github.com/immortalwrt/immortalwrt.git immortalwrt
@@ -36,95 +38,98 @@ jobs:
           mkdir -p target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom
         shell: bash
 
-      # 核心修复：用YAML "|" 标识多行脚本，强制解析器按原样处理文本
-      - name: 3. Write DTS File
+      # 3. 写入设备树（核心：逐行echo，无heredoc）
+      - name: Write DTS
         run: |
-          cat > immortalwrt/target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts << EOF
-// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
-/dts-v1/;
-#include "ipq5322.dtsi"
-/ {
-    model = "JDCloud Taiyi Plus (ER2)";
-    compatible = "jdcloud,taiyi-plus", "qcom,ipq5322";
-    memory@0 {
-        device_type = "memory";
-        reg = <0x0 0x0 0x0 0x80000000>;
-    };
-    chosen {
-        bootargs = "console=ttyMSM0,115200n8 rootfstype=squashfs,jffs2";
-    };
-    aliases {
-        serial0 = &blsp1_uart1;
-        ethernet0 = &gmac0;
-        ethernet1 = &gmac1;
-        ethernet2 = &gmac2;
-        ethernet3 = &gmac3;
-    };
-};
-&blsp1_uart1 { status = "okay"; };
-&gmac0 {
-    status = "okay";
-    phy-mode = "2500base-x";
-    fixed-link { speed = <2500>; full-duplex; };
-};
-&gmac1 {
-    status = "okay";
-    phy-mode = "2500base-x";
-    fixed-link { speed = <2500>; full-duplex; };
-};
-&gmac2 {
-    status = "okay";
-    phy-mode = "2500base-x";
-    fixed-link { speed = <2500>; full-duplex; };
-};
-&gmac3 {
-    status = "okay";
-    phy-mode = "2500base-x";
-    fixed-link { speed = <2500>; full-duplex; };
-};
-&mdio {
-    status = "okay";
-    phy0: ethernet-phy@0 { reg = <0>; };
-    phy1: ethernet-phy@1 { reg = <1>; };
-    phy2: ethernet-phy@2 { reg = <2>; };
-    phy3: ethernet-phy@3 { reg = <3>; };
-};
-&nand {
-    status = "okay";
-    nand@0 {
-        partitions {
-            compatible = "fixed-partitions";
-            #address-cells = <1>;
-            #size-cells = <1>;
-            partition@0 { label = "0:BL"; reg = <0x00000000 0x00500000>; read-only; };
-            partition@500000 { label = "0:Kernel"; reg = <0x00500000 0x02000000>; };
-            partition@2500000 { label = "0:RootFS"; reg = <0x02500000 0x07fb0000>; };
-        };
-    };
-};
-EOF
+          # 逐行写入设备树，完全避免<< EOF导致的解析错误
+          DTS_FILE="immortalwrt/target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts"
+          echo "// SPDX-License-Identifier: GPL-2.0-or-later OR MIT" > "${DTS_FILE}"
+          echo "/dts-v1/;" >> "${DTS_FILE}"
+          echo "#include \"ipq5322.dtsi\"" >> "${DTS_FILE}"
+          echo "/" >> "${DTS_FILE}"
+          echo "{" >> "${DTS_FILE}"
+          echo "    model = \"JDCloud Taiyi Plus (ER2)\";" >> "${DTS_FILE}"
+          echo "    compatible = \"jdcloud,taiyi-plus\", \"qcom,ipq5322\";" >> "${DTS_FILE}"
+          echo "    memory@0 {" >> "${DTS_FILE}"
+          echo "        device_type = \"memory\";" >> "${DTS_FILE}"
+          echo "        reg = <0x0 0x0 0x0 0x80000000>;" >> "${DTS_FILE}"
+          echo "    };" >> "${DTS_FILE}"
+          echo "    chosen {" >> "${DTS_FILE}"
+          echo "        bootargs = \"console=ttyMSM0,115200n8 rootfstype=squashfs,jffs2\";" >> "${DTS_FILE}"
+          echo "    };" >> "${DTS_FILE}"
+          echo "    aliases {" >> "${DTS_FILE}"
+          echo "        serial0 = &blsp1_uart1;" >> "${DTS_FILE}"
+          echo "        ethernet0 = &gmac0;" >> "${DTS_FILE}"
+          echo "        ethernet1 = &gmac1;" >> "${DTS_FILE}"
+          echo "        ethernet2 = &gmac2;" >> "${DTS_FILE}"
+          echo "        ethernet3 = &gmac3;" >> "${DTS_FILE}"
+          echo "    };" >> "${DTS_FILE}"
+          echo "};" >> "${DTS_FILE}"
+          echo "&blsp1_uart1 { status = \"okay\"; };" >> "${DTS_FILE}"
+          echo "&gmac0 {" >> "${DTS_FILE}"
+          echo "    status = \"okay\";" >> "${DTS_FILE}"
+          echo "    phy-mode = \"2500base-x\";" >> "${DTS_FILE}"
+          echo "    fixed-link { speed = <2500>; full-duplex; };" >> "${DTS_FILE}"
+          echo "};" >> "${DTS_FILE}"
+          echo "&gmac1 {" >> "${DTS_FILE}"
+          echo "    status = \"okay\";" >> "${DTS_FILE}"
+          echo "    phy-mode = \"2500base-x\";" >> "${DTS_FILE}"
+          echo "    fixed-link { speed = <2500>; full-duplex; };" >> "${DTS_FILE}"
+          echo "};" >> "${DTS_FILE}"
+          echo "&gmac2 {" >> "${DTS_FILE}"
+          echo "    status = \"okay\";" >> "${DTS_FILE}"
+          echo "    phy-mode = \"2500base-x\";" >> "${DTS_FILE}"
+          echo "    fixed-link { speed = <2500>; full-duplex; };" >> "${DTS_FILE}"
+          echo "};" >> "${DTS_FILE}"
+          echo "&gmac3 {" >> "${DTS_FILE}"
+          echo "    status = \"okay\";" >> "${DTS_FILE}"
+          echo "    phy-mode = \"2500base-x\";" >> "${DTS_FILE}"
+          echo "    fixed-link { speed = <2500>; full-duplex; };" >> "${DTS_FILE}"
+          echo "};" >> "${DTS_FILE}"
+          echo "&mdio {" >> "${DTS_FILE}"
+          echo "    status = \"okay\";" >> "${DTS_FILE}"
+          echo "    phy0: ethernet-phy@0 { reg = <0>; };" >> "${DTS_FILE}"
+          echo "    phy1: ethernet-phy@1 { reg = <1>; };" >> "${DTS_FILE}"
+          echo "    phy2: ethernet-phy@2 { reg = <2>; };" >> "${DTS_FILE}"
+          echo "    phy3: ethernet-phy@3 { reg = <3>; };" >> "${DTS_FILE}"
+          echo "};" >> "${DTS_FILE}"
+          echo "&nand {" >> "${DTS_FILE}"
+          echo "    status = \"okay\";" >> "${DTS_FILE}"
+          echo "    nand@0 {" >> "${DTS_FILE}"
+          echo "        partitions {" >> "${DTS_FILE}"
+          echo "            compatible = \"fixed-partitions\";" >> "${DTS_FILE}"
+          echo "            #address-cells = <1>;" >> "${DTS_FILE}"
+          echo "            #size-cells = <1>;" >> "${DTS_FILE}"
+          echo "            partition@0 { label = \"0:BL\"; reg = <0x00000000 0x00500000>; read-only; };" >> "${DTS_FILE}"
+          echo "            partition@500000 { label = \"0:Kernel\"; reg = <0x00500000 0x02000000>; };" >> "${DTS_FILE}"
+          echo "            partition@2500000 { label = \"0:RootFS\"; reg = <0x02500000 0x07fb0000>; };" >> "${DTS_FILE}"
+          echo "        };" >> "${DTS_FILE}"
+          echo "    };" >> "${DTS_FILE}"
+          echo "};" >> "${DTS_FILE}"
         shell: bash
 
-      - name: 4. Add Device Config to Makefile
+      # 4. 写入Makefile配置（逐行echo）
+      - name: Write Makefile
         run: |
-          cat >> immortalwrt/target/linux/ipq53xx/image/Makefile << EOF
-define Device/jdcloud-taiyi-plus
-  \$(call Device/FitImageLzma)
-  \$(call Device/UbiFit)
-  DEVICE_VENDOR := JDCloud
-  DEVICE_MODEL := Taiyi Plus (ER2)
-  DEVICE_DTS := ipq5322-jdcloud-taiyi-plus
-  DEVICE_DTS_DIR := \$(DTS_DIR)/qcom
-  BLOCKSIZE := 128k
-  PAGESIZE := 2048
-  IMAGE_SIZE := 32768k
-  DEVICE_PACKAGES := kmod-usb3 kmod-sfp
-endef
-TARGET_DEVICES += jdcloud-taiyi-plus
-EOF
+          MAKEFILE="immortalwrt/target/linux/ipq53xx/image/Makefile"
+          echo "" >> "${MAKEFILE}"
+          echo "define Device/jdcloud-taiyi-plus" >> "${MAKEFILE}"
+          echo "  \$(call Device/FitImageLzma)" >> "${MAKEFILE}"
+          echo "  \$(call Device/UbiFit)" >> "${MAKEFILE}"
+          echo "  DEVICE_VENDOR := JDCloud" >> "${MAKEFILE}"
+          echo "  DEVICE_MODEL := Taiyi Plus (ER2)" >> "${MAKEFILE}"
+          echo "  DEVICE_DTS := ipq5322-jdcloud-taiyi-plus" >> "${MAKEFILE}"
+          echo "  DEVICE_DTS_DIR := \$(DTS_DIR)/qcom" >> "${MAKEFILE}"
+          echo "  BLOCKSIZE := 128k" >> "${MAKEFILE}"
+          echo "  PAGESIZE := 2048" >> "${MAKEFILE}"
+          echo "  IMAGE_SIZE := 32768k" >> "${MAKEFILE}"
+          echo "  DEVICE_PACKAGES := kmod-usb3 kmod-sfp" >> "${MAKEFILE}"
+          echo "endef" >> "${MAKEFILE}"
+          echo "TARGET_DEVICES += jdcloud-taiyi-plus" >> "${MAKEFILE}"
         shell: bash
 
-      - name: 5. Update Feeds & Install iStore
+      # 5. 更新feeds
+      - name: Update Feeds
         run: |
           cd immortalwrt
           ./scripts/feeds update -a
@@ -132,26 +137,27 @@ EOF
           ./scripts/feeds install -y luci-app-store luci-theme-argon luci-i18n-store-zh-cn
         shell: bash
 
-      - name: 6. Generate Build Config
+      # 6. 生成编译配置（逐行echo）
+      - name: Write Config
         run: |
+          CONFIG_FILE="immortalwrt/.config"
+          echo "CONFIG_TARGET_qualcommax=y" > "${CONFIG_FILE}"
+          echo "CONFIG_TARGET_qualcommax_ipq53xx=y" >> "${CONFIG_FILE}"
+          echo "CONFIG_TARGET_qualcommax_ipq53xx_DEVICE_jdcloud-taiyi-plus=y" >> "${CONFIG_FILE}"
+          echo "CONFIG_PACKAGE_luci=y" >> "${CONFIG_FILE}"
+          echo "CONFIG_PACKAGE_luci-theme-argon=y" >> "${CONFIG_FILE}"
+          echo "CONFIG_PACKAGE_luci-app-store=y" >> "${CONFIG_FILE}"
+          echo "CONFIG_PACKAGE_luci-i18n-store-zh-cn=y" >> "${CONFIG_FILE}"
+          echo "CONFIG_PACKAGE_openssh-sftp-server=y" >> "${CONFIG_FILE}"
+          echo "CONFIG_PACKAGE_curl=y" >> "${CONFIG_FILE}"
+          echo "CONFIG_IPV6=y" >> "${CONFIG_FILE}"
+          echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> "${CONFIG_FILE}"
           cd immortalwrt
-          cat > .config << EOF
-CONFIG_TARGET_qualcommax=y
-CONFIG_TARGET_qualcommax_ipq53xx=y
-CONFIG_TARGET_qualcommax_ipq53xx_DEVICE_jdcloud-taiyi-plus=y
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-theme-argon=y
-CONFIG_PACKAGE_luci-app-store=y
-CONFIG_PACKAGE_luci-i18n-store-zh-cn=y
-CONFIG_PACKAGE_openssh-sftp-server=y
-CONFIG_PACKAGE_curl=y
-CONFIG_IPV6=y
-CONFIG_TARGET_ROOTFS_SQUASHFS=y
-EOF
           make defconfig
         shell: bash
 
-      - name: 7. Download Dependencies & Build
+      # 7. 编译固件
+      - name: Build Firmware
         run: |
           cd immortalwrt
           make download -j$(nproc)
@@ -159,7 +165,8 @@ EOF
           echo "FIRMWARE_DATE=$(date +'%Y%m%d%H%M')" >> "$GITHUB_ENV"
         shell: bash
 
-      - name: 8. Package Firmware
+      # 8. 打包上传
+      - name: Package & Upload
         run: |
           cd immortalwrt
           mkdir -p firmware
@@ -167,15 +174,11 @@ EOF
           zip -r "taiyi-plus-immortalwrt-${{ env.FIRMWARE_DATE }}.zip" firmware/
         shell: bash
 
-      - name: 9. Upload to Releases
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "v${{ env.FIRMWARE_DATE }}"
           files: "immortalwrt/taiyi-plus-immortalwrt-${{ env.FIRMWARE_DATE }}.zip"
-          body: |
-            ## 京东云太乙Plus ImmortalWrt固件
-            - 版本：${{ github.event.inputs.version }}
-            - 编译时间：${{ env.FIRMWARE_DATE }}
-            - 默认配置：IP 192.168.1.1 | 账号 root | 密码 password
+          body: "## 京东云太乙Plus固件\n- 版本：${{ github.event.inputs.version }}\n- 编译时间：${{ env.FIRMWARE_DATE }}\n- 默认IP：192.168.1.1 | 账号：root | 密码：password"
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
