@@ -18,28 +18,26 @@ jobs:
       contents: write
 
     steps:
-      # 步骤1：安装基础依赖（极简版）
-      - name: Install Dependencies
+      - name: 1. Install Basic Dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y build-essential git libncurses5-dev libssl-dev python3-distutils rsync unzip wget curl
+          sudo apt install -y build-essential git libncurses5-dev libssl-dev python3-distutils rsync unzip wget curl device-tree-compiler
           sudo timedatectl set-timezone "Asia/Shanghai"
+        shell: bash
 
-      # 步骤2：克隆源码+配置feeds
-      - name: Clone Source Code
+      - name: 2. Clone Source Code
         run: |
-          BRANCH=${{ github.event.inputs.branch || 'openwrt-24.10' }}
-          git clone --depth 1 -b $BRANCH https://github.com/immortalwrt/immortalwrt.git immortalwrt
+          BRANCH="${{ github.event.inputs.branch || 'openwrt-24.10' }}"
+          git clone --depth 1 -b "${BRANCH}" https://github.com/immortalwrt/immortalwrt.git immortalwrt
           cd immortalwrt
-          # 基础feeds配置
-          echo "src-git packages https://github.com/immortalwrt/packages.git;$BRANCH" > feeds.conf.default
-          echo "src-git luci https://github.com/immortalwrt/luci.git;$BRANCH" >> feeds.conf.default
+          echo "src-git packages https://github.com/immortalwrt/packages.git;${BRANCH}" > feeds.conf.default
+          echo "src-git luci https://github.com/immortalwrt/luci.git;${BRANCH}" >> feeds.conf.default
           echo "src-git istore https://github.com/linkease/istore-core.git;main" >> feeds.conf.default
-          # 创建设备树目录
           mkdir -p target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom
+        shell: bash
 
-      # 步骤3：写入设备树（核心修复：用YAML | 标识多行文本）
-      - name: Write DTS File
+      # 核心修复：用YAML "|" 标识多行脚本，强制解析器按原样处理文本
+      - name: 3. Write DTS File
         run: |
           cat > immortalwrt/target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts << EOF
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
@@ -107,8 +105,7 @@ jobs:
 EOF
         shell: bash
 
-      # 步骤4：添加设备编译配置
-      - name: Add Device to Makefile
+      - name: 4. Add Device Config to Makefile
         run: |
           cat >> immortalwrt/target/linux/ipq53xx/image/Makefile << EOF
 define Device/jdcloud-taiyi-plus
@@ -127,16 +124,15 @@ TARGET_DEVICES += jdcloud-taiyi-plus
 EOF
         shell: bash
 
-      # 步骤5：更新feeds+安装iStore
-      - name: Update Feeds
+      - name: 5. Update Feeds & Install iStore
         run: |
           cd immortalwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           ./scripts/feeds install -y luci-app-store luci-theme-argon luci-i18n-store-zh-cn
+        shell: bash
 
-      # 步骤6：生成编译配置
-      - name: Generate Config
+      - name: 6. Generate Build Config
         run: |
           cd immortalwrt
           cat > .config << EOF
@@ -153,33 +149,33 @@ CONFIG_IPV6=y
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
 EOF
           make defconfig
+        shell: bash
 
-      # 步骤7：下载依赖+编译固件
-      - name: Build Firmware
+      - name: 7. Download Dependencies & Build
         run: |
           cd immortalwrt
           make download -j$(nproc)
           make -j$(nproc) V=s || make -j1 V=s
-          echo "FIRMWARE_DATE=$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
+          echo "FIRMWARE_DATE=$(date +'%Y%m%d%H%M')" >> "$GITHUB_ENV"
+        shell: bash
 
-      # 步骤8：打包+上传固件
-      - name: Upload to Releases
+      - name: 8. Package Firmware
         run: |
           cd immortalwrt
           mkdir -p firmware
-          cp bin/targets/qualcommax/ipq53xx/*.bin firmware/
-          zip -r taiyi-plus-immortalwrt-${{ env.FIRMWARE_DATE }}.zip firmware/
+          cp bin/targets/qualcommax/ipq53xx/*.bin firmware/ 2>/dev/null
+          zip -r "taiyi-plus-immortalwrt-${{ env.FIRMWARE_DATE }}.zip" firmware/
         shell: bash
 
-      - name: Release Firmware
+      - name: 9. Upload to Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ env.FIRMWARE_DATE }}
-          files: immortalwrt/taiyi-plus-immortalwrt-${{ env.FIRMWARE_DATE }}.zip
+          tag_name: "v${{ env.FIRMWARE_DATE }}"
+          files: "immortalwrt/taiyi-plus-immortalwrt-${{ env.FIRMWARE_DATE }}.zip"
           body: |
             ## 京东云太乙Plus ImmortalWrt固件
-            版本：${{ github.event.inputs.version }}
-            编译时间：${{ env.FIRMWARE_DATE }}
-            默认IP：192.168.1.1 | 账号：root | 密码：password
+            - 版本：${{ github.event.inputs.version }}
+            - 编译时间：${{ env.FIRMWARE_DATE }}
+            - 默认配置：IP 192.168.1.1 | 账号 root | 密码 password
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
