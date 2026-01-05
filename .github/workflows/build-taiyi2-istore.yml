@@ -1,162 +1,433 @@
-name: Build ImmortalWrt-Taiyi2 + iStore
+name: Build ImmortalWrt for JDCloud Taiyi Plus
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: '固件版本号'
+        required: false
+        default: '24.10'
+      branch:
+        description: 'ImmortalWrt分支'
+        required: false
+        default: 'openwrt-24.10'
+
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  FEEDS_CONF: |
+    src-git packages https://github.com/immortalwrt/packages.git;${BRANCH}
+    src-git luci https://github.com/immortalwrt/luci.git;${BRANCH}
+    src-git routing https://github.com/immortalwrt/routing.git;${BRANCH}
+    src-git telephony https://github.com/immortalwrt/telephony.git;${BRANCH}
+    src-git istore https://github.com/linkease/istore-core.git;main
+  CONFIG_FILE: |
+    # 目标平台
+    CONFIG_TARGET_qualcommax=y
+    CONFIG_TARGET_qualcommax_ipq53xx=y
+    CONFIG_TARGET_qualcommax_ipq53xx_DEVICE_jdcloud-taiyi-plus=y
+    
+    # 基础系统
+    CONFIG_PACKAGE_luci=y
+    CONFIG_PACKAGE_luci-theme-argon=y
+    CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+    CONFIG_PACKAGE_luci-app-opkg=y
+    CONFIG_PACKAGE_luci-app-firewall=y
+    CONFIG_DEFAULT_luci_theme="argon"
+    CONFIG_PACKAGE_openssh-sftp-server=y
+    CONFIG_PACKAGE_curl=y
+    CONFIG_PACKAGE_htop=y
+    CONFIG_PACKAGE_iperf3=y
+    CONFIG_PACKAGE_wget-ssl=y
+    CONFIG_PACKAGE_vim-fuller=y
+    
+    # iStore应用商店
+    CONFIG_PACKAGE_luci-app-store=y
+    CONFIG_PACKAGE_luci-i18n-store-zh-cn=y
+    CONFIG_PACKAGE_app-meta-ddns=y
+    CONFIG_PACKAGE_app-meta-passwall=y
+    CONFIG_PACKAGE_app-meta-openclash=y
+    
+    # 网络优化
+    CONFIG_PACKAGE_kmod-tcp-bbr=y
+    CONFIG_PACKAGE_luci-app-sqm=y
+    CONFIG_PACKAGE_kmod-ipt-offload=y
+    CONFIG_PACKAGE_kmod-nf-flowtable=y
+    CONFIG_PACKAGE_xfrm_interface=y
+    
+    # 硬件驱动
+    CONFIG_PACKAGE_kmod-usb3=y
+    CONFIG_PACKAGE_kmod-mmc-core=y
+    CONFIG_PACKAGE_kmod-sdhci-msm=y
+    CONFIG_PACKAGE_kmod-phy-qca8075=y
+    CONFIG_PACKAGE_kmod-sfp=y
+    CONFIG_PACKAGE_kmod-thermal=y
+    
+    # 文件系统
+    CONFIG_PACKAGE_kmod-fs-ext4=y
+    CONFIG_PACKAGE_kmod-fs-vfat=y
+    CONFIG_PACKAGE_kmod-fs-exfat=y
+    CONFIG_PACKAGE_kmod-usb-storage=y
+    CONFIG_PACKAGE_kmod-scsi-generic=y
+    
+    # IPv6
+    CONFIG_IPV6=y
+    CONFIG_PACKAGE_odhcp6c=y
+    CONFIG_PACKAGE_odhcpd=y
+    CONFIG_PACKAGE_luci-proto-ipv6=y
+    
+    # 存储优化
+    CONFIG_MTD_SPI_NOR_USE_4K_SECTORS=y
+    CONFIG_NAND_PAGE_SIZE=2048
+    CONFIG_NAND_OOB_SIZE=128
+    CONFIG_NAND_BLOCK_SIZE=128k
+    CONFIG_TARGET_ROOTFS_SQUASHFS=y
+    CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256
+    
+    # 调试工具
+    CONFIG_PACKAGE_luci-app-statistics=y
+    CONFIG_PACKAGE_luci-app-ttyd=y
+    CONFIG_PACKAGE_luci-app-watchcat=y
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
-
+    
     steps:
       - name: 1. 初始化编译环境
         run: |
           sudo rm -rf /etc/apt/sources.list.d/*
-          sudo apt update -y && sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget curl
+          sudo apt update -y
+          sudo apt install -y build-essential clang flex bison g++ gawk \
+          gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
+          python3-distutils rsync unzip zlib1g-dev file wget curl subversion \
+          swig libelf-dev libncurses-dev device-tree-compiler ccache \
+          ecj fastjar java-propose-classpath python2 python3 python3-pip \
+          python3-setuptools python3-wheel cmake ninja-build libtool autoconf automake
+          
+          # 配置ccache
+          sudo mkdir -p /mnt/ccache
+          sudo chown -R $USER:$USER /mnt/ccache
+          echo "export CCACHE_DIR=/mnt/ccache" >> $GITHUB_ENV
+          echo "export CCACHE_MAXSIZE=15G" >> $GITHUB_ENV
+          echo "export PATH=/usr/lib/ccache:$PATH" >> $GITHUB_ENV
+          
+          # 设置时区和磁盘检查
           sudo timedatectl set-timezone "Asia/Shanghai"
           df -h
 
-      - name: 2. 克隆源码+创建设备树
+      - name: 2. 克隆源码
         run: |
-          git clone -b openwrt-24.10 --depth 1 https://github.com/immortalwrt/immortalwrt.git
+          git clone --depth 1 -b ${{ github.event.inputs.branch || env.BRANCH }} $REPO_URL immortalwrt
           cd immortalwrt
+          echo "$FEEDS_CONF" > feeds.conf.default
+          
+          # 创建设备树目录
           mkdir -p target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom
 
-      - name: 3. 写入太乙PLUS设备树文件
+      - name: 3. 写入设备树文件
         run: |
-          cat > immortalwrt/target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts << EOF
+          cat > immortalwrt/target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
-#include "ipq5332.dtsi"
+#include "ipq5322.dtsi"
+
 / {
-	model = "JDCloud Taiyi Plus (ER2)";
-	compatible = "jdcloud,taiyi-plus", "qcom,ipq5332";
-	memory@0 {
-		device_type = "memory";
-		reg = <0x0 0x0 0x0 0x80000000>;
-	};
-	chosen {
-		bootargs = "console=ttyMSM0,115200n8 rootfstype=squashfs,jffs2";
-	};
-	aliases {
-		serial0 = &blsp1_uart1;
-		ethernet0 = &gmac0;
-		ethernet1 = &gmac1;
-	};
+    model = "JDCloud Taiyi Plus (ER2)";
+    compatible = "jdcloud,taiyi-plus", "qcom,ipq5322";
+    
+    memory@0 {
+        device_type = "memory";
+        reg = <0x0 0x0 0x0 0x80000000>; // 2GB RAM
+    };
+    
+    chosen {
+        bootargs = "console=ttyMSM0,115200n8 rootfstype=squashfs,jffs2";
+    };
+    
+    aliases {
+        serial0 = &blsp1_uart1;
+        ethernet0 = &gmac0;
+        ethernet1 = &gmac1;
+        ethernet2 = &gmac2;
+        ethernet3 = &gmac3;
+        sfp0 = &sfp_port;
+    };
+    
+    reserved-memory {
+        #address-cells = <2>;
+        #size-cells = <2>;
+        ranges;
+        
+        qseecom_mem: qseecom@f6000000 {
+            reg = <0x0 0xf6000000 0x0 0x1800000>;
+            no-map;
+        };
+    };
 };
-&blsp1_uart1 { status = "okay"; };
+
+&blsp1_uart1 { 
+    status = "okay"; 
+    pinctrl-names = "default";
+    pinctrl-0 = <&uart1_pins>;
+};
+
+// 2.5G网口配置
 &gmac0 {
-	status = "okay";
-	phy-mode = "sgmii";
-	phy-handle = <&phy0>;
+    status = "okay";
+    phy-mode = "2500base-x";
+    phy-handle = <&phy0>;
+    fixed-link {
+        speed = <2500>;
+        full-duplex;
+    };
 };
+
 &gmac1 {
-	status = "okay";
-	phy-mode = "sgmii";
-	phy-handle = <&phy1>;
+    status = "okay";
+    phy-mode = "2500base-x";
+    phy-handle = <&phy1>;
+    fixed-link {
+        speed = <2500>;
+        full-duplex;
+    };
 };
+
+&gmac2 {
+    status = "okay";
+    phy-mode = "2500base-x";
+    phy-handle = <&phy2>;
+    fixed-link {
+        speed = <2500>;
+        full-duplex;
+    };
+};
+
+&gmac3 {
+    status = "okay";
+    phy-mode = "2500base-x";
+    phy-handle = <&phy3>;
+    fixed-link {
+        speed = <2500>;
+        full-duplex;
+    };
+};
+
+// SFP+光口配置
+&sfp_port {
+    compatible = "sff,sfp";
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&sfp_pins>;
+    tx-fault-gpios = <&tlmm 42 GPIO_ACTIVE_HIGH>;
+    tx-disable-gpios = <&tlmm 43 GPIO_ACTIVE_HIGH>;
+    rate-select0-gpios = <&tlmm 44 GPIO_ACTIVE_HIGH>;
+    los-gpios = <&qcom_tsens 2 GPIO_ACTIVE_HIGH>;
+    mod-def0-gpios = <&tlmm 45 GPIO_ACTIVE_LOW>;
+};
+
 &mdio {
-	status = "okay";
-	phy0: ethernet-phy@0 { reg = <0>; };
-	phy1: ethernet-phy@1 { reg = <1>; };
+    status = "okay";
+    pinctrl-0 = <&mdio_pins>;
+    pinctrl-names = "default";
+    
+    phy0: ethernet-phy@0 { 
+        reg = <0>; 
+        qca,ar8033-refclk-internal;
+    };
+    phy1: ethernet-phy@1 { 
+        reg = <1>; 
+        qca,ar8033-refclk-internal;
+    };
+    phy2: ethernet-phy@2 { 
+        reg = <2>; 
+        qca,ar8033-refclk-internal;
+    };
+    phy3: ethernet-phy@3 { 
+        reg = <3>; 
+        qca,ar8033-refclk-internal;
+    };
 };
-&qpic_bam { status = "okay"; };
+
+// M.2 NVMe存储支持
+&pcie0 {
+    status = "okay";
+    perst-gpio = <&tlmm 38 GPIO_ACTIVE_LOW>;
+    wake-gpio = <&tlmm 39 GPIO_ACTIVE_HIGH>;
+    
+    pcie@0 {
+        reg = <0x0 0x0 0x0 0x0 0x0>;
+        #address-cells = <3>;
+        #size-cells = <2>;
+        
+        nvme@1,0 {
+            compatible = "pci0010,5845";
+            reg = <0x10000 0x0 0x0 0x0 0x0>;
+            device_type = "pci";
+        };
+    };
+};
+
+// USB 3.0支持
+&usb3 {
+    status = "okay";
+    dr_mode = "host";
+};
+
+// NAND闪存配置
 &nand {
-	status = "okay";
-	nand@0 {
-		partitions {
-			compatible = "fixed-partitions";
-			#address-cells = <1>;
-			#size-cells = <1>;
-		};
-	};
+    status = "okay";
+    pinctrl-0 = <&nand_pins>;
+    pinctrl-names = "default";
+    nand@0 {
+        partitions {
+            compatible = "fixed-partitions";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            
+            partition@0 {
+                label = "0:BL";
+                reg = <0x00000000 0x00500000>;
+                read-only;
+            };
+            partition@500000 {
+                label = "0:Kernel";
+                reg = <0x00500000 0x02000000>;
+            };
+            partition@2500000 {
+                label = "0:RootFS";
+                reg = <0x02500000 0x07fb0000>;
+            };
+        };
+    };
 };
 EOF
 
-      - name: 4. 添加设备编译条目到Makefile
+      - name: 4. 添加设备编译条目
         run: |
-          cat >> immortalwrt/target/linux/ipq53xx/image/Makefile << EOF
+          cat >> immortalwrt/target/linux/ipq53xx/image/Makefile << 'EOF'
+
 # JDCloud Taiyi Plus (IPQ5322)
 define Device/jdcloud-taiyi-plus
-  \$(call Device/FitImage)
-  \$(call Device/UbiFit)
+  $(call Device/FitImageLzma)
+  $(call Device/UbiFit)
   DEVICE_VENDOR := JDCloud
   DEVICE_MODEL := Taiyi Plus (ER2)
-  DEVICE_DTS := qcom/ipq5322-jdcloud-taiyi-plus
+  DEVICE_DTS := ipq5322-jdcloud-taiyi-plus
+  DEVICE_DTS_DIR := $(DTS_DIR)/qcom
   DEVICE_DTS_CONFIG := config@1
   BLOCKSIZE := 128k
   PAGESIZE := 2048
-  IMAGE_SIZE := 15360k
+  IMAGE_SIZE := 32768k
+  KERNEL_IN_UBI := 1
+  UBOOTENV_IN_UBI := 1
   UBINIZE_OPTS := -E 5
+  DEVICE_PACKAGES := kmod-usb3 kmod-sfp kmod-phy-qca8075 kmod-mmc-core
 endef
 TARGET_DEVICES += jdcloud-taiyi-plus
 EOF
 
-      - name: 5. 启用NSS/PPE加速
+      - name: 5. 启用硬件加速
         run: |
-          echo -e "\n# NSS/PPE加速" >> immortalwrt/target/linux/ipq53xx/config-6.6
-          echo "CONFIG_QCA_NSS_DRV=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
-          echo "CONFIG_QCA_NSS_GMAC=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
-          echo "CONFIG_QCA_NSS_DP=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
-          echo "CONFIG_TCP_CONG_BBR=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
+          # 针对IPQ5322的优化
+          echo -e "\n# IPQ5322硬件优化" >> immortalwrt/target/linux/ipq53xx/config-6.6
+          echo "CONFIG_CPU_FREQ=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
+          echo "CONFIG_ARM_QCOM_CPUFREQ_NVMEM=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
+          echo "CONFIG_QCA_PPE_QOS=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
+          echo "CONFIG_XFRM_OFFLOAD=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
+          echo "CONFIG_NET_SWITCHDEV=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
+          echo "CONFIG_NET_DEVLINK=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
 
-      - name: 6. 集成iStore应用商店
+      - name: 6. 更新feeds并安装
         run: |
           cd immortalwrt
-          echo "src-git istore https://github.com/linkease/istore-ui.git;main" >> feeds.conf.default
-          echo "src-git store https://github.com/linkease/istore.git;main" >> feeds.conf.default
           ./scripts/feeds update -a
-          ./scripts/feeds install -y luci-app-store luci-theme-argon
+          ./scripts/feeds install -a
+          ./scripts/feeds install -y -p istore luci luci-compat luci-theme-argon
 
       - name: 7. 生成编译配置
         run: |
           cd immortalwrt
-          cat > .config << EOF
-CONFIG_TARGET_qualcommax=y
-CONFIG_TARGET_qualcommax_ipq53xx=y
-CONFIG_TARGET_qualcommax_ipq53xx_DEVICE_jdcloud-taiyi-plus=y
-
-# 基础功能
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-theme-argon=y
-CONFIG_PACKAGE_luci-app-opkg=y
-CONFIG_PACKAGE_luci-app-firewall=y
-CONFIG_PACKAGE_openssh-sftp-server=y
-CONFIG_PACKAGE_curl=y
-CONFIG_PACKAGE_htop=y
-
-# iStore应用商店
-CONFIG_PACKAGE_luci-app-store=y
-CONFIG_PACKAGE_luci-i18n-store-zh-cn=y
-
-# NSS/PPE加速
-CONFIG_PACKAGE_kmod-qca-nss-dp=y
-CONFIG_PACKAGE_kmod-qca-nss-gmac=y
-CONFIG_PACKAGE_luci-app-nss-dnsmasq=y
-
-# 网络优化
-CONFIG_PACKAGE_kmod-tcp-bbr=y
-CONFIG_PACKAGE_luci-app-sqm=y
-EOF
+          echo "$CONFIG_FILE" > .config
           make defconfig
 
       - name: 8. 下载依赖包
         run: |
           cd immortalwrt
           make download -j$(nproc)
-          find dl -size -1024c -exec rm -f {} \;
+          find dl -size -1024c -delete
 
       - name: 9. 编译固件
+        id: compile
         run: |
           cd immortalwrt
-          make -j$(nproc) || make -j1 V=s
-          echo "FIRMWARE_DATE=$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
+          # 使用ccache加速编译
+          ccache -s
+          make -j$(nproc) V=s || make -j1 V=s
+          ccache -s
+          
+          # 获取固件路径
+          FIRMWARE_PATH=$(find bin/targets/qualcommax/ipq53xx -type f \( -name "*.bin" -o -name "*.ubi" -o -name "*.img" \))
+          echo "FIRMWARE_PATH<<EOF" >> $GITHUB_ENV
+          echo "$FIRMWARE_PATH" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          
+          # 设置日期变量
+          echo "FIRMWARE_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
+          echo "FIRMWARE_TIME=$(date +'%H%M')" >> $GITHUB_ENV
 
-      - name: 10. 上传固件到Releases
+      - name: 10. 整理固件文件
+        run: |
+          cd immortalwrt
+          mkdir -p firmware
+          cp ${{ env.FIRMWARE_PATH }} firmware/
+          cp bin/targets/qualcommax/ipq53xx/config.buildinfo firmware/
+          zip -r firmware.zip firmware/
+
+      - name: 11. 上传固件到Releases
         uses: softprops/action-gh-release@v2
         with:
-          name: ImmortalWrt-Taiyi2-iStore-${{ env.FIRMWARE_DATE }}
-          tag_name: ${{ env.FIRMWARE_DATE }}
+          name: TaiyiPlus-ImmortalWrt-${{ env.FIRMWARE_DATE }}-${{ env.FIRMWARE_TIME }}
+          tag_name: v${{ env.FIRMWARE_DATE }}-${{ env.FIRMWARE_TIME }}
           files: |
-            immortalwrt/bin/targets/qualcommax/ipq53xx/*.itb
-            immortalwrt/bin/targets/qualcommax/ipq53xx/*.bin
+            immortalwrt/firmware.zip
+            immortalwrt/firmware/*
+          body: |
+            ## 京东云太乙Plus专用固件
+            **版本**: ImmortalWrt ${{ github.event.inputs.version || '24.10' }}
+            **编译时间**: ${{ env.FIRMWARE_DATE }} ${{ env.FIRMWARE_TIME }}
+            
+            ### 硬件适配
+            - CPU: IPQ5322 四核 1.5GHz
+            - RAM: 2GB DDR4
+            - 存储: M.2 NVMe SSD
+            - 网口: 4×2.5G RJ45 + 1×SFP+
+            - USB: 1×USB 3.0
+            
+            ### 功能特性
+            ✅ 全硬件驱动支持  
+            ✅ 2.5G网口线速转发  
+            ✅ SFP+光口支持  
+            ✅ M.2 NVMe存储加速  
+            ✅ iStore应用商店  
+            ✅ 硬件级网络加速  
+            ✅ IPv6全支持  
+            ✅ USB 3.0高速传输  
+            
+            ### 默认配置
+            IP地址: 192.168.1.1  
+            用户名: root  
+            密码: password  
+            
+            ### 刷机说明
+            1. 解压firmware.zip获取固件文件
+            2. 通过Breed或U-Boot刷入sysupgrade.bin
+            3. 首次启动约需3分钟初始化
+            
+            > 技术支持: [GitHub Issues](https://github.com/${{ github.repository }}/issues)
+
+      - name: 12. 清理工作空间
+        if: always()
+        run: |
+          rm -rf immortalwrt
+          ccache -C
