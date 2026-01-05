@@ -1,12 +1,12 @@
 name: Build ImmortalWrt-Taiyi2 + iStore
 on:
-  workflow_dispatch:  # 仅手动触发编译
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     permissions:
-      contents: write  # 允许上传固件到Releases
+      contents: write
 
     steps:
       - name: 1. 初始化编译环境
@@ -16,14 +16,15 @@ jobs:
           sudo timedatectl set-timezone "Asia/Shanghai"
           df -h
 
-      - name: 2. 克隆ImmortalWrt官方源码并适配
+      - name: 2. 克隆源码+创建设备树
         run: |
           git clone -b openwrt-24.10 --depth 1 https://github.com/immortalwrt/immortalwrt.git
           cd immortalwrt
-          
-          # 2.1 创建设备树文件（修复EOF语法，统一缩进）
           mkdir -p target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom
-          cat > target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts << EOF
+
+      - name: 3. 写入太乙PLUS设备树文件
+        run: |
+          cat > immortalwrt/target/linux/ipq53xx/files/arch/arm64/boot/dts/qcom/ipq5322-jdcloud-taiyi-plus.dts << EOF
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
 #include "ipq5332.dtsi"
@@ -71,9 +72,10 @@ jobs:
 	};
 };
 EOF
-          
-          # 2.2 修改Makefile添加设备编译条目
-          cat >> target/linux/ipq53xx/image/Makefile << EOF
+
+      - name: 4. 添加设备编译条目到Makefile
+        run: |
+          cat >> immortalwrt/target/linux/ipq53xx/image/Makefile << EOF
 # JDCloud Taiyi Plus (IPQ5322)
 define Device/jdcloud-taiyi-plus
   \$(call Device/FitImage)
@@ -89,21 +91,26 @@ define Device/jdcloud-taiyi-plus
 endef
 TARGET_DEVICES += jdcloud-taiyi-plus
 EOF
-          
-          # 2.3 启用NSS/PPE加速
-          echo -e "\n# NSS/PPE加速" >> target/linux/ipq53xx/config-6.6
-          echo "CONFIG_QCA_NSS_DRV=y" >> target/linux/ipq53xx/config-6.6
-          echo "CONFIG_QCA_NSS_GMAC=y" >> target/linux/ipq53xx/config-6.6
-          echo "CONFIG_QCA_NSS_DP=y" >> target/linux/ipq53xx/config-6.6
-          echo "CONFIG_TCP_CONG_BBR=y" >> target/linux/ipq53xx/config-6.6
 
-          # 2.4 集成iStore应用商店
+      - name: 5. 启用NSS/PPE加速
+        run: |
+          echo -e "\n# NSS/PPE加速" >> immortalwrt/target/linux/ipq53xx/config-6.6
+          echo "CONFIG_QCA_NSS_DRV=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
+          echo "CONFIG_QCA_NSS_GMAC=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
+          echo "CONFIG_QCA_NSS_DP=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
+          echo "CONFIG_TCP_CONG_BBR=y" >> immortalwrt/target/linux/ipq53xx/config-6.6
+
+      - name: 6. 集成iStore应用商店
+        run: |
+          cd immortalwrt
           echo "src-git istore https://github.com/linkease/istore-ui.git;main" >> feeds.conf.default
           echo "src-git store https://github.com/linkease/istore.git;main" >> feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -y luci-app-store luci-theme-argon
 
-          # 2.5 生成编译配置（含iStore+核心功能）
+      - name: 7. 生成编译配置
+        run: |
+          cd immortalwrt
           cat > .config << EOF
 CONFIG_TARGET_qualcommax=y
 CONFIG_TARGET_qualcommax_ipq53xx=y
@@ -118,11 +125,11 @@ CONFIG_PACKAGE_openssh-sftp-server=y
 CONFIG_PACKAGE_curl=y
 CONFIG_PACKAGE_htop=y
 
-# iStore应用商店（核心）
+# iStore应用商店
 CONFIG_PACKAGE_luci-app-store=y
 CONFIG_PACKAGE_luci-i18n-store-zh-cn=y
 
-# NSS/PPE硬件加速
+# NSS/PPE加速
 CONFIG_PACKAGE_kmod-qca-nss-dp=y
 CONFIG_PACKAGE_kmod-qca-nss-gmac=y
 CONFIG_PACKAGE_luci-app-nss-dnsmasq=y
@@ -131,25 +138,21 @@ CONFIG_PACKAGE_luci-app-nss-dnsmasq=y
 CONFIG_PACKAGE_kmod-tcp-bbr=y
 CONFIG_PACKAGE_luci-app-sqm=y
 EOF
-          
-          # 补全配置依赖
           make defconfig
 
-      - name: 3. 下载依赖包（避免编译中断）
+      - name: 8. 下载依赖包
         run: |
           cd immortalwrt
           make download -j$(nproc)
           find dl -size -1024c -exec rm -f {} \;
 
-      - name: 4. 编译固件
+      - name: 9. 编译固件
         run: |
           cd immortalwrt
-          # 多核编译失败则单线程调试
           make -j$(nproc) || make -j1 V=s
-          # 记录编译时间
           echo "FIRMWARE_DATE=$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
 
-      - name: 5. 上传固件到Releases
+      - name: 10. 上传固件到Releases
         uses: softprops/action-gh-release@v2
         with:
           name: ImmortalWrt-Taiyi2-iStore-${{ env.FIRMWARE_DATE }}
